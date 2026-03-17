@@ -2,98 +2,139 @@ import streamlit as st
 import pandas as pd
 import math
 
-# --- PAGE CONFIG ---
+# --- 1. PAGE CONFIG & THEME ---
 st.set_page_config(page_title="MarisecAI Master Planner", layout="wide")
 
-# --- CUSTOM CSS ---
 st.markdown("""
     <style>
-    .main { background: linear-gradient(135deg, #020024 0%, #08084b 35%, #001233 100%); color: white; }
-    .stApp { background: transparent; }
+    /* Deep Sea Glassmorphism Background */
+    .stApp {
+        background: radial-gradient(circle at top right, #001233, #000000);
+        color: white;
+    }
+
+    /* Glass Card styling */
     .glass-card {
-        background: rgba(255, 255, 255, 0.08);
-        backdrop-filter: blur(15px);
-        border-radius: 15px;
+        background: rgba(255, 255, 255, 0.06);
+        backdrop-filter: blur(20px) saturate(180%);
+        border-radius: 20px;
         border: 1px solid rgba(255, 255, 255, 0.1);
-        padding: 25px; margin-bottom: 20px;
-        box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5);
+        padding: 25px;
+        margin-bottom: 20px;
+        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
     }
-    div.stButton > button:first-child {
-        background-color: #00d4ff; color: #001233; font-weight: bold; width: 100%;
+
+    /* Metric & Text Styling */
+    .metric-val { font-size: 2.2rem; font-weight: 800; color: #00d4ff; margin: 10px 0; }
+    .roi-positive { color: #00ffcc; font-weight: bold; }
+    .lead-note { color: #ffcc00; font-size: 0.85rem; }
+    
+    /* Vessel Preview Boxes */
+    .vessel-box { 
+        border-left: 3px solid #00ffcc; background: rgba(0, 255, 204, 0.05);
+        padding: 15px; border-radius: 5px; margin-bottom: 10px; font-size: 0.9rem;
     }
+
+    /* Clean UI Overrides */
+    .stButton>button { width: 100%; background: #00d4ff; color: #001233; font-weight: bold; border: none; height: 3rem; }
+    .stDownloadButton>button { background: rgba(0, 212, 255, 0.1); border: 1px solid #00d4ff; color: #00d4ff; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- DATABASES & LEAD TIMES ---
-HW_DB = {
-    "NVIDIA B200 (SXM)": {"tp_gb_hr": 210, "acq": 5200000, "rent": 450, "vram": 192, "lead": "32-40 Weeks (Global Shortage)"},
-    "NVIDIA H200 (SXM)": {"tp_gb_hr": 125, "acq": 3800000, "rent": 320, "vram": 141, "lead": "12-16 Weeks (Stable)"},
-    "NVIDIA A100 (80GB)": {"tp_gb_hr": 60, "acq": 1800000, "rent": 195, "vram": 80, "lead": "Ready Stock / 2 Weeks"}
+# --- 2. DATABASES ---
+HW_INFO = {
+    "NVIDIA B200 (SXM)": {
+        "tp": 210, "acq": 5200000, "rent": 430, "lead": "32-40 Weeks", 
+        "acq_url": "https://www.nvidia.com/en-in/data-center/dgx-b200/",
+        "rent_url": "https://www.e2enetworks.com/gpus/nvidia-b200",
+        "vendor": "E2E Networks (MeitY)"
+    },
+    "NVIDIA H200 (SXM)": {
+        "tp": 125, "acq": 3800000, "rent": 300, "lead": "12-16 Weeks",
+        "acq_url": "https://www.nvidia.com/en-in/data-center/h200/",
+        "rent_url": "https://www.e2enetworks.com/gpu-cloud",
+        "vendor": "E2E Networks / Oracle"
+    },
+    "NVIDIA A100 (80GB)": {
+        "tp": 60, "acq": 1800000, "rent": 180, "lead": "Ready Stock (Local)",
+        "acq_url": "https://www.indiamart.com/proddetail/nvidia-a100-tensor-core-gpu-card-80gb-2855180993955.html",
+        "rent_url": "https://www.cantech.in/gpu-servers/rent-a100-gpu",
+        "vendor": "Cantech / IndiaMART Sellers"
+    }
 }
-ARCH_COMPLEXITY = {"VTS (Maritime Signal MoE)": 0.85, "Standard (ViT/YOLO)": 1.0, "Simple (CNN/Linear)": 1.5, "Dense (Transformer/LLM)": 0.6}
+ARCH_MAP = {"VTS (Maritime Signal MoE)": 0.85, "Standard (YOLO)": 1.0, "Simple": 1.5, "Dense": 0.6}
+JETSON_NANO_TP = 0.5 
 
-# --- 1. SELECTION SECTION ---
-st.title("🚢 MarisecAI Master Infrastructure Planner")
+# --- 3. SELECTION SECTION ---
+st.title("🚢 MarisecAI Master Infrastructure Strategy")
 
 with st.container():
     st.markdown('<div class="glass-card">', unsafe_allow_html=True)
     c1, c2, c3 = st.columns([1.5, 1.5, 2])
     with c1:
-        data_val = st.number_input("Data Size", min_value=1.0, value=1.0)
-        unit = st.radio("Data Unit", ["TB", "GB"], horizontal=True)
-        data_gb = data_val * 1024 if unit == "TB" else data_val
+        data_val = st.number_input("Data Volume", min_value=1.0, value=10.0)
+        d_unit = st.radio("Unit", ["TB", "GB"], horizontal=True)
+        data_gb = data_val * 1024 if d_unit == "TB" else data_val
     with c2:
-        time_val = st.number_input("Time Target", min_value=1.0, value=48.0)
-        t_unit = st.radio("Time Unit", ["Hrs", "Days", "Months"], horizontal=True)
-        hours_map = {"Hrs": 1, "Days": 24, "Months": 720}
-        total_hours = time_val * hours_map[t_unit]
+        time_val = st.number_input("Target Delivery", min_value=1.0, value=72.0)
+        t_unit = st.radio("Period", ["Hrs", "Days", "Months"], horizontal=True)
+        h_map = {"Hrs": 1, "Days": 24, "Months": 720}
+        total_hrs = time_val * h_map[t_unit]
     with c3:
-        arch = st.selectbox("Architecture Type", list(ARCH_COMPLEXITY.keys()), index=0)
+        arch = st.selectbox("Architecture Type", list(ARCH_MAP.keys()))
         prec = st.selectbox("Precision (Quantization)", ["4-bit", "8-bit", "16-bit"], index=1)
-        hw_choice = st.selectbox("Target Hardware", list(HW_DB.keys()), index=0)
+        hw_sel = st.selectbox("Target Hardware", list(HW_INFO.keys()))
     
-    # Store calculations in session state to persist after RFQ clicks
-    if st.button("APPLY SELECTION & GENERATE STRATEGY") or 'data_gb' not in st.session_state:
-        hw = HW_DB[hw_choice]
-        q_map = {"4-bit": 1.6, "8-bit": 1.3, "16-bit": 1.0}
-        eff_tp = hw["tp_gb_hr"] * q_map[prec] * ARCH_COMPLEXITY[arch]
-        n_gpus = math.ceil(data_gb / (eff_tp * total_hours))
-        
-        st.session_state.update({
-            'data_gb': data_gb, 'total_hours': total_hours, 'hw_choice': hw_choice,
-            'n_gpus': n_gpus, 'cost_rent': n_gpus * hw["rent"] * total_hours,
-            'cost_acq': n_gpus * hw["acq"], 'eff_tp': eff_tp, 'hw_data': hw
-        })
+    st.write("")
+    if st.button("🔥 GENERATE UNIFIED STRATEGY & ROI"):
+        st.session_state.active = True
     st.markdown('</div>', unsafe_allow_html=True)
 
-# --- 2. RESULTS ---
-st.markdown("### 📊 Infrastructure Comparison")
-res_c1, res_c2 = st.columns(2)
-
-with res_c1:
-    st.markdown(f'<div class="glass-card"><h4 style="color:#00d4ff">Option A: Renting</h4><h2>₹{st.session_state.cost_rent:,.0f}</h2><p>Cluster: {st.session_state.n_gpus}x GPUs</p></div>', unsafe_allow_html=True)
-    with st.popover("📂 View Renting Logic"):
-        st.latex(r"N_{gpus} = \lceil \frac{D_{gb}}{V_{eff} \times T} \rceil")
-        st.info(f"Calc: {st.session_state.data_gb:,.0f} / ({st.session_state.eff_tp:.2f} × {st.session_state.total_hours}) = {st.session_state.n_gpus}")
-
-with res_c2:
-    st.markdown(f'<div class="glass-card"><h4 style="color:#00ffcc">Option B: Acquisition</h4><h2>₹{st.session_state.cost_acq:,.0f}</h2><p>Lead Time: <b>{st.session_state.hw_data["lead"]}</b></p></div>', unsafe_allow_html=True)
-    with st.popover("📂 View Purchase Logic"):
-        st.latex(r"Cost_{Acq} = N_{gpus} \times Price_{unit}")
-        st.success(f"Calc: {st.session_state.n_gpus} × ₹{st.session_state.hw_data['acq']:,.0f}")
-
-# --- 3. RFQ SECTION (Reliable Implementation) ---
-st.divider()
-st.markdown("### 📜 Prepare RFQ Document")
-with st.container():
-    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-    rfq_mode = st.radio("RFQ Strategy:", ["Buy Hardware (CapEx)", "Rent Hardware (OpEx)"], horizontal=True)
+# --- 4. CALCULATION & ROI ---
+if 'active' in st.session_state:
+    info = HW_INFO[hw_sel]
+    q_map = {"4-bit": 1.6, "8-bit": 1.3, "16-bit": 1.0}
+    eff_tp = info["tp"] * q_map[prec] * ARCH_MAP[arch]
+    n_gpus = math.ceil(data_gb / (eff_tp * total_hrs))
     
-    if rfq_mode == "Buy Hardware (CapEx)":
-        rfq_text = f"Subject: RFQ - {st.session_state.n_gpus}x {st.session_state.hw_choice}\n\nLead Time Requirement: {st.session_state.hw_data['lead']}\nStandard Terms: OEM 3-Year Platinum Warranty required. Delivery to Bangalore HQ."
+    cost_rent = n_gpus * info["rent"] * total_hrs
+    cost_acq = n_gpus * info["acq"]
+    
+    nano_days = (data_gb / JETSON_NANO_TP) / 24
+    cluster_days = total_hrs / 24
+    v_boost = nano_days / cluster_days
+
+    st.markdown("### 📈 Strategic ROI & Time-Velocity Advantage")
+    roi1, roi2, roi3 = st.columns(3)
+    with roi1:
+        st.markdown(f'<div class="glass-card"><p>Jetson Nano Baseline</p><div class="metric-val">{nano_days:.1f} Days</div></div>', unsafe_allow_html=True)
+    with roi2:
+        st.markdown(f'<div class="glass-card"><p>{hw_sel} Cluster</p><div class="metric-val" style="color:#00ffcc">{cluster_days:.1f} Days</div><p class="roi-positive">🚀 {v_boost:.0f}x Speed Increase</p></div>', unsafe_allow_html=True)
+    with roi3:
+        st.markdown(f'<div class="glass-card"><p>Purchase (CapEx)</p><div class="metric-val">₹{cost_acq:,.0f}</div><p class="lead-note">⏱️ Lead: {info["lead"]}</p></div>', unsafe_allow_html=True)
+
+    # --- 5. THE PREVIEW BUTTON ---
+    st.divider()
+    if st.button("👁️ SHOW VESSEL DASHBOARD PREVIEW"):
+        st.markdown('<div class="glass-card">', unsafe_allow_html=True)
+        st.markdown("#### 🛰️ Live MoE Inference Stream (Vessel Analysis)")
+        pv1, pv2, pv3 = st.columns(3)
+        pv1.markdown(f'<div class="vessel-box"><b>Active Vessel:</b> MARI-EXE-01<br><b>Position:</b> Arabian Sea (Mumbai Coast)<br><b>Risk Index:</b> 0.12 (Low)</div>', unsafe_allow_html=True)
+        pv2.markdown(f'<div class="vessel-box"><b>Compute Engine:</b> {hw_sel}<br><b>Throughput:</b> {eff_tp:.2f} GB/hr<br><b>Precision:</b> {prec}</div>', unsafe_allow_html=True)
+        pv3.markdown(f'<div class="vessel-box"><b>MoE Routing:</b> Active<br><b>Nodes Online:</b> {n_gpus}<br><b>Status:</b> Optimizing...</div>', unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    # --- 6. EXECUTION & RFQ ---
+    st.markdown("### 📜 Procurement Strategy")
+    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
+    mode = st.radio("RFQ Selection:", ["Buy Hardware (CapEx)", "Rent Hardware (OpEx)"], horizontal=True)
+    
+    if mode == "Buy Hardware (CapEx)":
+        rfq_txt = f"Subject: RFQ - {n_gpus}x {hw_sel}\n\nNote: Please confirm lead time relative to estimated {info['lead']}. OEM 3-Year Warranty mandatory."
     else:
-        rfq_text = f"Subject: RFQ - Cloud GPU Cluster\n\nSecurity Terms: MeitY empanelled Indian Data Center required. Data residency strictly within India. No data-usage clause for training."
+        rfq_txt = f"Subject: RFQ - Cloud Instance ({hw_sel})\n\nRequirement: MeitY empanelled provider ({info['vendor']}). Sovereign data residency required."
         
-    st.text_area("Draft Preview", rfq_text, height=150)
-    st.download_button("📥 Download RFQ Text", data=rfq_text, file_name="MarisecAI_RFQ.txt")
+    st.text_area("Live RFQ Preview", rfq_txt, height=120)
+    st.download_button("📥 Download RFQ Text", rfq_txt, "MarisecAI_RFQ.txt")
+    st.markdown(f'<p><a href="{info["rent_url"]}" target="_blank" style="color:#00d4ff; text-decoration:none;">🔗 Visit {info["vendor"]} for Live Pricing</a></p>', unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
