@@ -3,7 +3,7 @@ import pandas as pd
 import math
 
 # --- 1. PAGE CONFIG & E2E THEME ---
-st.set_page_config(page_title="MarisecAI | Hardware Consultant", layout="wide")
+st.set_page_config(page_title="MarisecAI | Training Strategy", layout="wide")
 
 st.markdown("""
     <style>
@@ -14,17 +14,21 @@ st.markdown("""
     .price-text { font-size: 2.2rem; font-weight: 700; color: #0066cc; }
     .reco-badge { background-color: #e7f3ff; color: #005bb7; padding: 4px 12px; border-radius: 20px; font-weight: 700; font-size: 0.8rem; }
     div.stButton > button:first-child { background-color: #0066cc; color: white; border-radius: 4px; font-weight: 600; height: 3.5rem; width: 100%; border: none; }
+    .stDownloadButton>button { background: transparent; border: 1px solid #0066cc; color: #0066cc; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. THE HARDWARE KNOWLEDGE BASE ---
+# --- 2. DATA ---
 HW_DB = {
-    "NVIDIA B200 (SXM)": {"tp": 210, "acq": 5200000, "rent": 430, "lead": "32-40 Weeks", "tier": "Ultra-High Performance"},
-    "NVIDIA H200 (SXM)": {"tp": 125, "acq": 3800000, "rent": 300, "lead": "12-16 Weeks", "tier": "Enterprise Standard"},
-    "NVIDIA A100 (80GB)": {"tp": 60, "acq": 1800000, "rent": 180, "lead": "Ready Stock", "tier": "Value/Inference"}
+    "NVIDIA B200 (SXM)": {"tp": 210, "acq": 5200000, "rent": 430, "lead": "32-40 Weeks", "url_acq": "https://www.nvidia.com/en-in/data-center/dgx-b200/", "url_rent": "https://www.e2enetworks.com/gpus/nvidia-b200"},
+    "NVIDIA H200 (SXM)": {"tp": 125, "acq": 3800000, "rent": 300, "lead": "12-16 Weeks", "url_acq": "https://www.nvidia.com/en-in/data-center/h200/", "url_rent": "https://www.e2enetworks.com/gpu-cloud"},
+    "NVIDIA A100 (80GB)": {"tp": 60, "acq": 1800000, "rent": 180, "lead": "Ready Stock", "url_acq": "https://www.indiamart.com/proddetail/nvidia-a100-tensor-core-gpu-card-80gb-2855180993955.html", "url_rent": "https://www.cantech.in/gpu-servers/rent-a100-gpu"}
 }
 
-# --- 3. INPUTS ---
+LLM_MAP = {"MoE (Mixture of Experts)": 0.85, "Dense Transformer": 0.70, "Standard CNN/ViT": 1.0, "Lightweight (YOLO/Distil)": 1.5}
+Q_MAP = {"FP16 (Full)": 1.0, "INT8 (Quantized)": 1.3, "FP8 (Optimized)": 1.6}
+
+# --- 3. INPUT SECTION ---
 st.title("Project Infrastructure Configurator")
 
 with st.container():
@@ -38,77 +42,84 @@ with st.container():
         
     with c2:
         time_val = st.number_input("Processing Window", min_value=1.0, value=72.0)
-        t_unit = st.selectbox("Timeline", ["Hours", "Days", "Weeks"])
-        total_hrs = time_val * {"Hours": 1, "Days": 24, "Weeks": 168}[t_unit]
+        total_hrs = time_val * {"Hours": 1, "Days": 24, "Weeks": 168}[st.selectbox("Timeline", ["Hours", "Days", "Weeks"])]
         
     with c3:
-        # Added "" as a blank option for recommendation
-        hw_options = ["🔍 Auto-Select (Recommend for me)"] + list(HW_DB.keys())
-        hw_sel = st.selectbox("GPU Accelerator Model", hw_options)
-        arch = st.selectbox("Optimization Profile", ["VTS MoE (0.85x)", "Standard (1.0x)"])
+        hw_sel = st.selectbox("GPU Accelerator Model", ["🔍 Auto-Select (Recommend for me)"] + list(HW_DB.keys()))
+        
+        # Expert Mode: Only shows if a specific GPU is selected
+        if hw_sel != "🔍 Auto-Select (Recommend for me)":
+            llm_type = st.selectbox("Language Model Type", list(LLM_MAP.keys()))
+            quant = st.radio("Quantization Type", list(Q_MAP.keys()), horizontal=True)
+        else:
+            llm_type = "Standard CNN/ViT"
+            quant = "FP16 (Full)"
 
     st.write("")
-    run_calc = st.button("Generate Strategy & Recommend Hardware")
+    run_calc = st.button("View Training Strategy")
     st.markdown('</div>', unsafe_allow_html=True)
 
-# --- 4. THE RECOMMENDATION ENGINE ---
-def recommend_gpu(target_gb, target_hrs):
-    # Rule: Find the cheapest GPU that can finish the job with <= 8 nodes
-    best_fit = "NVIDIA A100 (80GB)" # Default
+# --- 4. CALCULATION LOGIC ---
+def get_recommendation(target_gb, target_hrs):
     for model, specs in reversed(list(HW_DB.items())):
         needed = math.ceil(target_gb / (specs['tp'] * target_hrs))
-        if needed <= 8:
-            best_fit = model
-    return best_fit
+        if needed <= 8: return model
+    return "NVIDIA B200 (SXM)"
 
 if hw_sel == "🔍 Auto-Select (Recommend for me)":
-    final_hw = recommend_gpu(data_gb, total_hrs)
-    is_reco = True
+    final_hw = get_recommendation(data_gb, total_hrs)
+    status_label = "RECOMMENDED HARDWARE"
+    is_auto = True
 else:
     final_hw = hw_sel
-    is_reco = False
+    status_label = f"COST COMPARISON: {final_hw}"
+    is_auto = False
 
-# --- 5. CALCULATIONS ---
 info = HW_DB[final_hw]
-eff_tp = info["tp"] * (0.85 if "VTS" in arch else 1.0)
+eff_tp = info["tp"] * Q_MAP[quant] * LLM_MAP[llm_type]
 n_nodes = math.ceil(data_gb / (eff_tp * total_hrs))
 cost_rent = n_nodes * info["rent"] * total_hrs
 cost_acq = n_nodes * info["acq"]
 
-# --- 6. VALUE PROPOSITION SECTION ---
-st.markdown(f"### Strategy for {final_hw} " + ('<span class="reco-badge">RECOMMENDED</span>' if is_reco else ""), unsafe_allow_html=True)
+# --- 5. RESULTS & VALUE PROPOSITION ---
+st.markdown(f"### {status_label}")
 
 v1, v2 = st.columns(2)
 with v1:
     st.markdown(f"""
     <div class="config-card">
-        <p class="label-sub">Option A: Cloud Rental (OpEx)</p>
+        <p class="label-sub">Option A: Renting (OpEx)</p>
         <div class="price-text">₹{cost_rent:,.0f}</div>
-        <p><b>Pay-as-you-go:</b> No upfront cost. Includes power and 24/7 IST support.</p>
-        <p style="color:#666; font-size:0.8rem">Break-even vs Buying: {(cost_acq/cost_rent):.1f} similar projects.</p>
+        <p>Monthly Flexible billing via Cloud. Data Residency: India.</p>
+        <a href="{info['url_rent']}" target="_blank" style="color:#0066cc; text-decoration:none; font-weight:600;">🔗 Check Rental Availability</a>
     </div>
     """, unsafe_allow_html=True)
+    
+    with st.popover("📂 View Calculation Logic"):
+        st.latex(r"N_{nodes} = \lceil \frac{Data_{GB}}{Throughput_{eff} \times Time} \rceil")
+        st.info(f"Throughput: {eff_tp:.2f} GB/hr | Required: {n_nodes} Nodes")
+        st.success(f"Cost: {n_nodes} nodes × ₹{info['rent']} × {total_hrs} hrs = ₹{cost_rent:,.0f}")
 
 with v2:
     st.markdown(f"""
     <div class="config-card">
-        <p class="label-sub">Option B: Direct Acquisition (CapEx)</p>
+        <p class="label-sub">Option B: Acquisition (CapEx)</p>
         <div class="price-text">₹{cost_acq:,.0f}</div>
-        <p><b>Lead Time:</b> {info['lead']}</p>
-        <p><b>TCO:</b> Own the asset for 3-5 years. Best for 24/7 sustained workloads.</p>
+        <p><b>Status:</b> {info['lead']} Delivery</p>
+        <a href="{info['url_acq']}" target="_blank" style="color:#0066cc; text-decoration:none; font-weight:600;">🔗 Check Purchase Lead Time</a>
     </div>
     """, unsafe_allow_html=True)
 
-# --- 7. PROCUREMENT RFQ ---
+# --- 6. PROCUREMENT ---
 st.markdown('<div class="config-card">', unsafe_allow_html=True)
-st.markdown("### Deployment Plan")
-mode = st.radio("Selected Path:", ["Rent Hardware", "Purchase Hardware"], horizontal=True)
+st.markdown("### Final Deployment RFQ")
+rfq_mode = st.radio("Selected Strategy:", ["Rental Request", "Acquisition Request"], horizontal=True)
 
-if mode == "Rent Hardware":
-    rfq = f"Request: {n_nodes}x {final_hw}\nDuration: {total_hrs} hrs\nNote: MeitY empanelled Indian DC required for MarisecAI data."
+if rfq_mode == "Rental Request":
+    rfq = f"Subject: RFQ - Cloud Instance ({final_hw})\nNodes: {n_nodes}\nDuration: {total_hrs} hrs\nSovereign Terms: Indian DC Data Residency required."
 else:
-    rfq = f"Purchase: {n_nodes}x {final_hw}\nDelivery: Bangalore HQ\nNote: Please confirm stock status relative to {info['lead']} lead time."
+    rfq = f"Subject: Purchase RFQ - {n_nodes}x {final_hw}\nLead Time: Relative to {info['lead']} estimate.\nDelivery: Bangalore HQ."
 
-st.text_area("Final RFQ Draft", rfq, height=100)
-st.download_button("Export Deployment Plan", rfq, file_name="MarisecAI_Strategy.txt")
+st.text_area("Preview", rfq, height=100)
+st.download_button("Export Procurement Plan", rfq, file_name="MarisecAI_RFQ.txt")
 st.markdown('</div>', unsafe_allow_html=True)
