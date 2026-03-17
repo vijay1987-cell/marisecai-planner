@@ -95,4 +95,5 @@ with st.container():
         rfq_text = f"Subject: RFQ - Cloud GPU Cluster\n\nSecurity Terms: MeitY empanelled Indian Data Center required. Data residency strictly within India. No data-usage clause for training."
         
     st.text_area("Draft Preview", rfq_text, height=150)
-    st.download_button("📥 Download RFQ Text", data=rfq_text,
+    st.download_button("📥 Download RFQ Text", data=rfq_text, file_name="MarisecAI_RFQ.txt")
+    st.markdown('</div>', unsafe_allow_html=True)
