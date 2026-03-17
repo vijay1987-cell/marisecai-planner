@@ -1,0 +1,13 @@
+# Ignore the virtual environment
+venv/
+marisec_env/
+
+# Ignore Python cache files
+__pycache__/
+*.pyc
+
+# Ignore Streamlit configuration
+.streamlit/
+
+# Ignore local OS junk
+.DS_Store
